@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: Hello World API
+  description: |
+    Sample contract-first Go service. This file is the single source of truth:
+    Go models and server stubs are generated from it with oapi-codegen.
+  version: 1.0.0
+  license:
+    name: MIT
+servers:
+  - url: /
+    description: The server hosting this document (relative, works on any host)
+tags:
+  - name: greetings
+    description: Say hello
+  - name: system
+    description: Operational endpoints
+
+paths:
+  /hello:
+    get:
+      operationId: getHello
+      summary: Greet someone
+      tags: [greetings]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          description: Who to greet. Defaults to "World".
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+            pattern: '^[\p{L} .''-]+$'
+          example: Gopher
+      responses:
+        '200':
+          description: A greeting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Greeting'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /greetings:
+    post:
+      operationId: createGreeting
+      summary: Build a custom greeting
+      tags: [greetings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GreetingRequest'
+      responses:
+        '201':
+          description: Greeting created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Greeting'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      tags: [system]
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+components:
+  schemas:
+    Greeting:
+      type: object
+      required: [message, createdAt]
+      properties:
+        message:
+          type: string
+          example: Hello, Gopher!
+        createdAt:
+          type: string
+          format: date-time
+
+    GreetingRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          example: Gopher
+        language:
+          $ref: '#/components/schemas/Language'
+
+    Language:
+      type: string
+      enum: [en, es, de, fr]
+      default: en
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    # RFC 9457 "Problem Details" error body.
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+
+  responses:
+    BadRequest:
+      description: The request did not match the contract
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Error:
+      description: Unexpected error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

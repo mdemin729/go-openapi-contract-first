@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Generated from api/openapi.yaml; collapsed in diffs on GitHub.
+oapi-codegen/internal/gen/*.gen.go linguist-generated=true
+ogen/internal/oas/oas_*_gen.go    linguist-generated=true

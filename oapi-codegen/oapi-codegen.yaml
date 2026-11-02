@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/HEAD/configuration-schema.json
+package: gen
+output: api.gen.go # relative to internal/gen, where go:generate runs
+generate:
+  models: true
+  std-http-server: true # Go 1.22+ net/http ServeMux, no framework needed
+  strict-server: true   # typed request/response objects per operation
+  embedded-spec: true   # GetSwagger() for runtime request validation
+output-options:
+  skip-prune: false
