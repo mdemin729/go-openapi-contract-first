@@ -1,4 +1,4 @@
-# openapi-go-template: oapi-codegen vs ogen
+# go-openapi-contract-first: oapi-codegen vs ogen
 
 One OpenAPI 3.0.3 contract (a "Hello world" API with `GET /hello`,
 `POST /greetings` and `GET /healthz`), implemented contract-first twice:

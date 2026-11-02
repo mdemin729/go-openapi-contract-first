@@ -1,4 +1,4 @@
-module github.com/mdemin729/openapi-go-template/ogen
+module github.com/mdemin729/go-openapi-contract-first/ogen
 
 go 1.27.3
 

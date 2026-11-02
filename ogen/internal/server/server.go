@@ -10,10 +10,10 @@ import (
 
 	"github.com/ogen-go/ogen/ogenerrors"
 
-	"github.com/mdemin729/openapi-go-template/ogen/api"
-	"github.com/mdemin729/openapi-go-template/ogen/internal/docs"
-	"github.com/mdemin729/openapi-go-template/ogen/internal/handler"
-	"github.com/mdemin729/openapi-go-template/ogen/internal/oas"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/api"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/docs"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/handler"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/oas"
 )
 
 func New(h *handler.Hello) (http.Handler, error) {

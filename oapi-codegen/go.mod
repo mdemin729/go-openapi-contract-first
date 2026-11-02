@@ -1,4 +1,4 @@
-module github.com/mdemin729/openapi-go-template/oapi-codegen
+module github.com/mdemin729/go-openapi-contract-first/oapi-codegen
 
 go 1.27.3
 

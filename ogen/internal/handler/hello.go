@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mdemin729/openapi-go-template/ogen/internal/oas"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/oas"
 )
 
 // Compile-time check that Hello satisfies the contract.

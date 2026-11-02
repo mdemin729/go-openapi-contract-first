@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mdemin729/openapi-go-template/oapi-codegen/internal/handler"
-	"github.com/mdemin729/openapi-go-template/oapi-codegen/internal/server"
+	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/handler"
+	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/server"
 )
 
 func main() {

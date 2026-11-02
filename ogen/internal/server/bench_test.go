@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mdemin729/openapi-go-template/ogen/internal/handler"
-	"github.com/mdemin729/openapi-go-template/ogen/internal/server"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/handler"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/server"
 )
 
 // Identical in both implementations so results are comparable.

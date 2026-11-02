@@ -13,10 +13,10 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 
-	"github.com/mdemin729/openapi-go-template/oapi-codegen/api"
-	"github.com/mdemin729/openapi-go-template/oapi-codegen/internal/docs"
-	"github.com/mdemin729/openapi-go-template/oapi-codegen/internal/gen"
-	"github.com/mdemin729/openapi-go-template/oapi-codegen/internal/handler"
+	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/api"
+	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/docs"
+	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/gen"
+	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/handler"
 )
 
 func New(h *handler.Hello) (http.Handler, error) {

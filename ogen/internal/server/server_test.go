@@ -14,9 +14,9 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 
-	"github.com/mdemin729/openapi-go-template/ogen/api"
-	"github.com/mdemin729/openapi-go-template/ogen/internal/handler"
-	"github.com/mdemin729/openapi-go-template/ogen/internal/server"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/api"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/handler"
+	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/server"
 )
 
 var fixedNow = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
