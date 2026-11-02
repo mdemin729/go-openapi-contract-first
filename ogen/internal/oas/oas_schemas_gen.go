@@ -3,11 +3,16 @@
 package oas
 
 import (
+	"fmt"
 	"net/url"
 	"time"
 
 	"github.com/go-faster/errors"
 )
+
+func (s *ErrorStatusCode) Error() string {
+	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
+}
 
 // ErrorStatusCode wraps Problem with StatusCode.
 type ErrorStatusCode struct {
@@ -35,8 +40,32 @@ func (s *ErrorStatusCode) SetResponse(val Problem) {
 	s.Response = val
 }
 
-func (*ErrorStatusCode) createGreetingRes() {}
-func (*ErrorStatusCode) getHelloRes()       {}
+// Ref: #/components/schemas/FieldError
+type FieldError struct {
+	// JSON Pointer into the request body, or ":" for parameters.
+	Pointer OptString `json:"pointer"`
+	Detail  string    `json:"detail"`
+}
+
+// GetPointer returns the value of Pointer.
+func (s *FieldError) GetPointer() OptString {
+	return s.Pointer
+}
+
+// GetDetail returns the value of Detail.
+func (s *FieldError) GetDetail() string {
+	return s.Detail
+}
+
+// SetPointer sets the value of Pointer.
+func (s *FieldError) SetPointer(val OptString) {
+	s.Pointer = val
+}
+
+// SetDetail sets the value of Detail.
+func (s *FieldError) SetDetail(val string) {
+	s.Detail = val
+}
 
 // Ref: #/components/schemas/Greeting
 type Greeting struct {
@@ -338,10 +367,18 @@ func (o OptURI) Or(d url.URL) url.URL {
 
 // Ref: #/components/schemas/Problem
 type Problem struct {
-	Type   OptURI    `json:"type"`
-	Title  string    `json:"title"`
-	Status int32     `json:"status"`
+	// A URI identifying the problem type; about:blank when the status code says it all.
+	Type OptURI `json:"type"`
+	// Short, human-readable summary; the same for every occurrence of the type.
+	Title string `json:"title"`
+	// The HTTP status code, repeated in the body.
+	Status int32 `json:"status"`
+	// Human-readable explanation specific to this occurrence.
 	Detail OptString `json:"detail"`
+	// The request path that produced the problem.
+	Instance OptString `json:"instance"`
+	// Field-level validation failures (extension member).
+	Errors []FieldError `json:"errors"`
 }
 
 // GetType returns the value of Type.
@@ -364,6 +401,16 @@ func (s *Problem) GetDetail() OptString {
 	return s.Detail
 }
 
+// GetInstance returns the value of Instance.
+func (s *Problem) GetInstance() OptString {
+	return s.Instance
+}
+
+// GetErrors returns the value of Errors.
+func (s *Problem) GetErrors() []FieldError {
+	return s.Errors
+}
+
 // SetType sets the value of Type.
 func (s *Problem) SetType(val OptURI) {
 	s.Type = val
@@ -382,6 +429,16 @@ func (s *Problem) SetStatus(val int32) {
 // SetDetail sets the value of Detail.
 func (s *Problem) SetDetail(val OptString) {
 	s.Detail = val
+}
+
+// SetInstance sets the value of Instance.
+func (s *Problem) SetInstance(val OptString) {
+	s.Instance = val
+}
+
+// SetErrors sets the value of Errors.
+func (s *Problem) SetErrors(val []FieldError) {
+	s.Errors = val
 }
 
 func (*Problem) createGreetingRes() {}

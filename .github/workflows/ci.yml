@@ -1,0 +1,92 @@
+# Contract-first CI. Every job answers one question:
+#
+#   contract   Is the OpenAPI document well-formed and does it follow our style guide?
+#   breaking   Does this change break existing clients? (compared with the base branch)
+#   go         Is the committed generated code current, and do the services pass their tests?
+#   ts-client  Does the TypeScript client for the web UI still generate and match what is committed?
+#
+# Tool versions are pinned so the result is the same on a laptop and in CI.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  REDOCLY_VERSION: 2.72.1
+  OASDIFF_VERSION: v1.35.0
+  OPENAPI_TS_VERSION: 7.13.0
+
+jobs:
+  contract:
+    name: lint OpenAPI contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The two sample modules must carry a byte-identical contract
+        run: cmp oapi-codegen/api/openapi.yaml ogen/api/openapi.yaml
+      - name: Redocly lint (rules in redocly.yaml)
+        run: npx --yes @redocly/cli@${{ env.REDOCLY_VERSION }} lint --format=github-actions
+
+  breaking:
+    name: breaking-change check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: oapi-codegen/go.mod
+      - name: Compare the contract with the base branch
+        run: |
+          git show "origin/${{ github.base_ref }}:oapi-codegen/api/openapi.yaml" > /tmp/base-openapi.yaml
+          go run github.com/oasdiff/oasdiff@${{ env.OASDIFF_VERSION }} breaking \
+            /tmp/base-openapi.yaml oapi-codegen/api/openapi.yaml \
+            --fail-on ERR --format githubactions
+      - name: Changelog for the PR summary
+        if: always()
+        run: |
+          echo '### API changes' >> "$GITHUB_STEP_SUMMARY"
+          go run github.com/oasdiff/oasdiff@${{ env.OASDIFF_VERSION }} changelog \
+            /tmp/base-openapi.yaml oapi-codegen/api/openapi.yaml --format markup >> "$GITHUB_STEP_SUMMARY" || true
+
+  go:
+    name: go (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [problem, oapi-codegen, ogen]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Generated code must match the contract (no hand edits, no stale output)
+        if: matrix.module != 'problem'
+        run: |
+          go -C ${{ matrix.module }} generate ./...
+          git diff --exit-code -- ${{ matrix.module }}/internal
+      - run: go -C ${{ matrix.module }} vet ./...
+      - run: go -C ${{ matrix.module }} test -race ./...
+
+  ts-client:
+    name: TypeScript client for the web UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Regenerate and compare with the committed file
+        run: |
+          # input and output come from redocly.yaml (apis.hello.x-openapi-ts)
+          npx --yes openapi-typescript@${{ env.OPENAPI_TS_VERSION }}
+          git diff --exit-code -- clients/typescript

@@ -10,10 +10,10 @@ running service publishes the same contract with interactive docs.
 ```
 api/openapi.yaml            the contract (edit this first)
 api/spec.go                 embeds the YAML into the binary
-oapi-codegen.yaml           generator config: models + net/http + strict server
+oapi-codegen.yaml           generator config: models + net/http + strict server + client
 internal/gen/               GENERATED, do not edit (go generate ./...)
 internal/handler/           business logic: implements gen.StrictServerInterface
-internal/server/            wiring: request validation, error format, routes
+internal/server/            wiring: request validation, RFC 9457 errors (../problem), routes
 internal/docs/              /openapi.yaml, /openapi.json, /docs, /redoc
 cmd/server/                 main: http.Server with timeouts and graceful shutdown
 ```
@@ -23,7 +23,8 @@ cmd/server/                 main: http.Server with timeouts and graceful shutdow
 1. Change `api/openapi.yaml`.
 2. `go generate ./...` (oapi-codegen is pinned as a Go tool in `go.mod`, so there is nothing to install).
 3. The build breaks until `internal/handler` implements any new operation.
-4. `go test ./...`. `TestResponsesMatchContract` checks that real responses match the spec.
+4. `go test ./...`. `TestResponsesMatchContract` checks that real responses match the spec;
+   `TestGeneratedClient` calls the service through the generated client, the way other Go services must.
 
 ## Run
 

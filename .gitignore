@@ -4,6 +4,9 @@ bin/
 *.test
 *.out
 
+# Scratch file written by `make breaking` / `make changelog`
+.base-openapi.yaml
+
 # Editors / OS
 .idea/
 .vscode/

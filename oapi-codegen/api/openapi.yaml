@@ -3,7 +3,8 @@ info:
   title: Hello World API
   description: |
     Sample contract-first Go service. This file is the single source of truth:
-    Go models and server stubs are generated from it with oapi-codegen.
+    Go models, server stubs and clients are generated from it. Conventions
+    are documented in docs/rest-hygiene.md and enforced by `.redocly.yaml`.
   version: 1.0.0
   license:
     name: BSD-3-Clause
@@ -81,6 +82,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+        default:
+          $ref: '#/components/responses/Error'
 
 components:
   schemas:
@@ -121,7 +124,8 @@ components:
           type: string
           enum: [ok]
 
-    # RFC 9457 "Problem Details" error body.
+    # RFC 9457 "Problem Details" error body. Every 4xx/5xx response in every
+    # service uses this shape, so clients need one error parser.
     Problem:
       type: object
       required: [title, status]
@@ -129,14 +133,41 @@ components:
         type:
           type: string
           format: uri
+          description: A URI identifying the problem type; about:blank when the status code says it all.
           default: about:blank
         title:
           type: string
+          description: Short, human-readable summary; the same for every occurrence of the type.
+          example: Bad Request
         status:
           type: integer
           format: int32
+          description: The HTTP status code, repeated in the body.
+          example: 400
         detail:
           type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          description: The request path that produced the problem.
+          example: /greetings
+        errors:
+          type: array
+          description: Field-level validation failures (extension member).
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required: [detail]
+      properties:
+        pointer:
+          type: string
+          description: JSON Pointer into the request body, or "<location>:<name>" for parameters.
+          example: /language
+        detail:
+          type: string
+          example: value is not one of the allowed values
 
   responses:
     BadRequest:

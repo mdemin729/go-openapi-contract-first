@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -62,6 +63,17 @@ func (e Language) Valid() bool {
 	}
 }
 
+// FieldError defines model for FieldError.
+type FieldError struct {
+	// Detail Example: value is not one of the allowed values
+	Detail string `json:"detail"`
+
+	// Pointer JSON Pointer into the request body, or "<location>:<name>" for parameters.
+	//
+	// Example: /language
+	Pointer *string `json:"pointer,omitempty"`
+}
+
 // Greeting defines model for Greeting.
 type Greeting struct {
 	CreatedAt time.Time `json:"createdAt"`
@@ -91,10 +103,29 @@ type Language string
 
 // Problem defines model for Problem.
 type Problem struct {
+	// Detail Human-readable explanation specific to this occurrence.
 	Detail *string `json:"detail,omitempty"`
-	Status int32   `json:"status"`
-	Title  string  `json:"title"`
-	Type   *string `json:"type,omitempty"`
+
+	// Errors Field-level validation failures (extension member).
+	Errors *[]FieldError `json:"errors,omitempty"`
+
+	// Instance The request path that produced the problem.
+	//
+	// Example: /greetings
+	Instance *string `json:"instance,omitempty"`
+
+	// Status The HTTP status code, repeated in the body.
+	//
+	// Example: 400
+	Status int32 `json:"status"`
+
+	// Title Short, human-readable summary; the same for every occurrence of the type.
+	//
+	// Example: Bad Request
+	Title string `json:"title"`
+
+	// Type A URI identifying the problem type; about:blank when the status code says it all.
+	Type *string `json:"type,omitempty"`
 }
 
 // BadRequest defines model for BadRequest.
@@ -111,6 +142,686 @@ type GetHelloParams struct {
 
 // CreateGreetingJSONRequestBody defines body for CreateGreeting for application/json ContentType.
 type CreateGreetingJSONRequestBody = GreetingRequest
+
+// RequestEditorFn is the function signature for the RequestEditor callback function
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
+
+// Doer performs HTTP requests.
+//
+// The standard http.Client implements this interface.
+type HttpRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// Client which conforms to the OpenAPI3 specification for this service.
+type Client struct {
+	// The endpoint of the server conforming to this interface, with scheme,
+	// https://api.deepmap.com for example. This can contain a path relative
+	// to the server, such as https://api.deepmap.com/dev-test, and all the
+	// paths in the swagger spec will be appended to the server.
+	Server string
+
+	// Doer for performing requests, typically a *http.Client with any
+	// customized settings, such as certificate chains.
+	Client HttpRequestDoer
+
+	// A list of callbacks for modifying requests which are generated before sending over
+	// the network.
+	RequestEditors []RequestEditorFn
+}
+
+// ClientOption allows setting custom parameters during construction
+type ClientOption func(*Client) error
+
+// Creates a new Client, with reasonable defaults
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	// create a client with sane default values
+	client := Client{
+		Server: server,
+	}
+	// mutate client and add all optional params
+	for _, o := range opts {
+		if err := o(&client); err != nil {
+			return nil, err
+		}
+	}
+	// ensure the server URL always has a trailing slash
+	if !strings.HasSuffix(client.Server, "/") {
+		client.Server += "/"
+	}
+	// create httpClient, if not already present
+	if client.Client == nil {
+		client.Client = &http.Client{}
+	}
+	return &client, nil
+}
+
+// WithHTTPClient allows overriding the default Doer, which is
+// automatically created using http.Client. This is useful for tests.
+func WithHTTPClient(doer HttpRequestDoer) ClientOption {
+	return func(c *Client) error {
+		c.Client = doer
+		return nil
+	}
+}
+
+// WithRequestEditorFn allows setting up a callback function, which will be
+// called right before sending the request. This can be used to mutate the request.
+func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
+	return func(c *Client) error {
+		c.RequestEditors = append(c.RequestEditors, fn)
+		return nil
+	}
+}
+
+// The interface specification for the client above.
+type ClientInterface interface {
+
+	// CreateGreetingWithBody Build a custom greeting
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+	CreateGreetingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateGreeting Build a custom greeting
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+	CreateGreeting(ctx context.Context, body CreateGreetingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHealth Liveness probe
+	//
+	// Corresponds with GET /healthz (the `GetHealth` operationId).
+	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHello Greet someone
+	//
+	// Corresponds with GET /hello (the `GetHello` operationId).
+	GetHello(ctx context.Context, params *GetHelloParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// CreateGreetingWithBody Build a custom greeting
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+func (c *Client) CreateGreetingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateGreetingRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateGreeting Build a custom greeting
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+func (c *Client) CreateGreeting(ctx context.Context, body CreateGreetingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateGreetingRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetHealth Liveness probe
+//
+// Corresponds with GET /healthz (the `GetHealth` operationId).
+func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHealthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetHello Greet someone
+//
+// Corresponds with GET /hello (the `GetHello` operationId).
+func (c *Client) GetHello(ctx context.Context, params *GetHelloParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHelloRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewCreateGreetingRequest calls the generic CreateGreeting builder with application/json body
+func NewCreateGreetingRequest(server string, body CreateGreetingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateGreetingRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateGreetingRequestWithBody constructs an http.Request for the CreateGreeting method, with any body, and a specified content type
+func NewCreateGreetingRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/greetings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetHealthRequest constructs an http.Request for the GetHealth method
+func NewGetHealthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/healthz")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHelloRequest constructs an http.Request for the GetHello method
+func NewGetHelloRequest(server string, params *GetHelloParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/hello")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Name != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "name", *params.Name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
+	for _, r := range c.RequestEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	for _, r := range additionalEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClientWithResponses builds on ClientInterface to offer response payloads
+type ClientWithResponses struct {
+	ClientInterface
+}
+
+// NewClientWithResponses creates a new ClientWithResponses, which wraps
+// Client with return type handling
+func NewClientWithResponses(server string, opts ...ClientOption) (*ClientWithResponses, error) {
+	client, err := NewClient(server, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientWithResponses{client}, nil
+}
+
+// WithBaseURL overrides the baseURL.
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *Client) error {
+		newBaseURL, err := url.Parse(baseURL)
+		if err != nil {
+			return err
+		}
+		c.Server = newBaseURL.String()
+		return nil
+	}
+}
+
+// ClientWithResponsesInterface is the interface specification for the client with responses above.
+type ClientWithResponsesInterface interface {
+
+	// CreateGreetingWithBodyWithResponse Build a custom greeting
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+	CreateGreetingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGreetingResponse, error)
+
+	// CreateGreetingWithResponse Build a custom greeting
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+	CreateGreetingWithResponse(ctx context.Context, body CreateGreetingJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGreetingResponse, error)
+
+	// GetHealthWithResponse Liveness probe
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /healthz (the `GetHealth` operationId).
+	GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error)
+
+	// GetHelloWithResponse Greet someone
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /hello (the `GetHello` operationId).
+	GetHelloWithResponse(ctx context.Context, params *GetHelloParams, reqEditors ...RequestEditorFn) (*GetHelloResponse, error)
+}
+
+type CreateGreetingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Greeting
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *BadRequest
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateGreetingResponse) GetJSON201() *Greeting {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r CreateGreetingResponse) GetApplicationproblemJSON400() *BadRequest {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateGreetingResponse) GetApplicationproblemJSONDefault() *Error {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateGreetingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateGreetingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateGreetingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateGreetingResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetHealthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Health
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetHealthResponse) GetJSON200() *Health {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetHealthResponse) GetApplicationproblemJSONDefault() *Error {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetHealthResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHealthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHealthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetHealthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetHelloResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Greeting
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *BadRequest
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetHelloResponse) GetJSON200() *Greeting {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r GetHelloResponse) GetApplicationproblemJSON400() *BadRequest {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetHelloResponse) GetApplicationproblemJSONDefault() *Error {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetHelloResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHelloResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHelloResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetHelloResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// CreateGreetingWithBodyWithResponse Build a custom greeting
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+func (c *ClientWithResponses) CreateGreetingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGreetingResponse, error) {
+	rsp, err := c.CreateGreetingWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateGreetingResponse(rsp)
+}
+
+// CreateGreetingWithResponse Build a custom greeting
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /greetings (the `CreateGreeting` operationId).
+func (c *ClientWithResponses) CreateGreetingWithResponse(ctx context.Context, body CreateGreetingJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGreetingResponse, error) {
+	rsp, err := c.CreateGreeting(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateGreetingResponse(rsp)
+}
+
+// GetHealthWithResponse Liveness probe
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /healthz (the `GetHealth` operationId).
+func (c *ClientWithResponses) GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error) {
+	rsp, err := c.GetHealth(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHealthResponse(rsp)
+}
+
+// GetHelloWithResponse Greet someone
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /hello (the `GetHello` operationId).
+func (c *ClientWithResponses) GetHelloWithResponse(ctx context.Context, params *GetHelloParams, reqEditors ...RequestEditorFn) (*GetHelloResponse, error) {
+	rsp, err := c.GetHello(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHelloResponse(rsp)
+}
+
+// ParseCreateGreetingResponse parses an HTTP response from a CreateGreetingWithResponse call
+func ParseCreateGreetingResponse(rsp *http.Response) (*CreateGreetingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateGreetingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Greeting
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHealthResponse parses an HTTP response from a GetHealthWithResponse call
+func ParseGetHealthResponse(rsp *http.Response) (*GetHealthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHealthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Health
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHelloResponse parses an HTTP response from a GetHelloWithResponse call
+func ParseGetHelloResponse(rsp *http.Response) (*GetHelloResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHelloResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Greeting
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -402,6 +1113,23 @@ func (response GetHealth200JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	return err
 }
 
+type GetHealthdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetHealthdefaultApplicationProblemPlusJSONResponse) VisitGetHealthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHelloRequestObject struct {
 	Params GetHelloParams
 }
@@ -595,23 +1323,29 @@ func (sh *strictHandler) GetHello(w http.ResponseWriter, r *http.Request, params
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

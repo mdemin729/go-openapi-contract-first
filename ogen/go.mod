@@ -9,6 +9,7 @@ require (
 	github.com/go-faster/errors v0.8.0
 	github.com/go-faster/jx v1.2.0
 	github.com/go-faster/yaml v0.4.6
+	github.com/mdemin729/go-openapi-contract-first/problem v0.0.0
 	github.com/ogen-go/ogen v1.24.0
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/metric v1.45.0
@@ -46,3 +47,5 @@ require (
 	golang.org/x/tools v0.48.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/mdemin729/go-openapi-contract-first/problem => ../problem

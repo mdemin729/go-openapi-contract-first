@@ -1,0 +1,99 @@
+# Redocly CLI configuration: lints the OpenAPI contract and tells
+# openapi-typescript where to write the web UI's types.
+# Run locally with `make lint` / `make ts-client`; CI runs the same commands.
+# The rules encode the conventions in docs/rest-hygiene.md, so a contract that
+# violates the style guide fails the build instead of being caught in review.
+#
+# Reference: https://redocly.com/docs/cli/rules
+#            https://redocly.com/docs/cli/rules/configurable-rules
+#            https://openapi-ts.dev/cli/#redocly-config
+
+apis:
+  # One entry per published contract. The ogen module carries a byte-identical
+  # copy, which CI checks with `cmp`, so it is not listed twice here.
+  hello:
+    root: oapi-codegen/api/openapi.yaml
+    x-openapi-ts:
+      output: clients/typescript/hello-api.d.ts
+
+extends:
+  - recommended
+
+rules:
+  # --- Identity and documentation -------------------------------------------
+  operation-operationId: error          # generators name methods after it
+  operation-operationId-unique: error
+  operation-operationId-url-safe: error
+  operation-summary: error
+  operation-description: off            # summary is enough for small operations
+  operation-tag-defined: error
+  tag-description: error
+  info-license: error
+  info-contact: off                     # enable once a team mailbox exists
+
+  # --- Paths and parameters ----------------------------------------------
+  paths-kebab-case: error               # /order-items, never /orderItems
+  no-path-trailing-slash: error
+  no-ambiguous-paths: error
+  no-identical-paths: error
+  path-params-defined: error
+  path-declaration-must-exist: error
+  path-not-include-query: error
+  operation-parameters-unique: error
+
+  # --- Responses -----------------------------------------------------------
+  operation-2xx-response: error
+  # Every operation must document failures. Operations with no input, such as
+  # health probes, legitimately have only a `default` error response, so this
+  # stays a warning; the house rule below still forces problem+json on it.
+  operation-4xx-response: warn
+  no-unused-components: error
+  no-unresolved-refs: error
+  no-example-value-and-externalValue: error
+  no-invalid-media-type-examples: error
+
+  # --- Servers and security ------------------------------------------------
+  no-server-example.com: error
+  no-server-trailing-slash: off         # the sample uses the relative server "/"
+  # The sample contract has no authentication on purpose. Real services MUST
+  # declare a securityScheme and apply it; switch this to "error" there.
+  security-defined: off
+
+  # --- House rules (configurable rules) ---------------------------------------
+  # Every error response must be RFC 9457 problem details, never plain JSON.
+  rule/error-responses-are-problem-json:
+    subject:
+      type: MediaTypesMap
+    where:
+      - subject:
+          type: Response
+          filterInParentKeys:
+            ['400', '401', '403', '404', '405', '409', '410', '412', '415', '422', '429', '500', '501', '502', '503', '504', 'default']
+        assertions:
+          defined: true
+    message: "4xx/5xx and default responses must be application/problem+json (RFC 9457)"
+    severity: error
+    assertions:
+      required: ['application/problem+json']
+  # Success responses with a body are JSON (binary downloads get an explicit exception).
+  rule/success-responses-are-json:
+    subject:
+      type: MediaTypesMap
+    where:
+      - subject:
+          type: Response
+          filterInParentKeys: ['200', '201']
+        assertions:
+          defined: true
+    message: "2xx responses with a body must offer application/json"
+    severity: error
+    assertions:
+      required: ['application/json']
+  # Schema property names are camelCase so generated clients look idiomatic everywhere.
+  rule/schema-properties-camel-case:
+    subject:
+      type: SchemaProperties
+    message: "Schema property names must be camelCase"
+    severity: error
+    assertions:
+      casing: camelCase

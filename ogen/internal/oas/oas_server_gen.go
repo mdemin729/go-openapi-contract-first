@@ -26,6 +26,10 @@ type Handler interface {
 	//
 	// GET /hello
 	GetHello(ctx context.Context, params GetHelloParams) (GetHelloRes, error)
+	// NewError creates *ErrorStatusCode from error returned by handler.
+	//
+	// Used for common default response.
+	NewError(ctx context.Context, err error) *ErrorStatusCode
 }
 
 // Server implements http server based on OpenAPI v3 specification and

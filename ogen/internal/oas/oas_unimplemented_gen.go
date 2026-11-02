@@ -39,3 +39,11 @@ func (UnimplementedHandler) GetHealth(ctx context.Context) (r *Health, _ error) 
 func (UnimplementedHandler) GetHello(ctx context.Context, params GetHelloParams) (r GetHelloRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
+
+// NewError creates *ErrorStatusCode from error returned by handler.
+//
+// Used for common default response.
+func (UnimplementedHandler) NewError(ctx context.Context, err error) (r *ErrorStatusCode) {
+	r = new(ErrorStatusCode)
+	return r
+}

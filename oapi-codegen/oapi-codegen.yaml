@@ -5,6 +5,7 @@ generate:
   models: true
   std-http-server: true # Go 1.22+ net/http ServeMux, no framework needed
   strict-server: true   # typed request/response objects per operation
+  client: true          # typed client: the only way other Go services call this API
   embedded-spec: true   # GetSwagger() for runtime request validation
 output-options:
   skip-prune: false

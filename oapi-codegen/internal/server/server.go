@@ -4,12 +4,13 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/routers"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/docs"
 	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/gen"
 	"github.com/mdemin729/go-openapi-contract-first/oapi-codegen/internal/handler"
+	"github.com/mdemin729/go-openapi-contract-first/problem"
 )
 
 func New(h *handler.Hello) (http.Handler, error) {
@@ -26,12 +28,20 @@ func New(h *handler.Hello) (http.Handler, error) {
 	}
 
 	strict := gen.NewStrictHandlerWithOptions(h, nil, gen.StrictHTTPServerOptions{
-		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeProblem(w, http.StatusBadRequest, err.Error())
+		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			problem.BadRequest(w, r, err.Error())
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			// A handler may return a *problem.Problem to send a specific
+			// status (409, 422, ...). Anything else is an internal error
+			// whose cause is logged but never sent to the client.
+			var p *problem.Problem
+			if errors.As(err, &p) {
+				problem.Write(w, r, p)
+				return
+			}
 			slog.ErrorContext(r.Context(), "handler failed", "err", err)
-			writeProblem(w, http.StatusInternalServerError, "internal error")
+			problem.Internal(w, r)
 		},
 	})
 
@@ -40,17 +50,17 @@ func New(h *handler.Hello) (http.Handler, error) {
 	validate := middleware.OapiRequestValidatorWithOptions(spec, &middleware.Options{
 		DoNotValidateServers:  true,
 		SilenceServersWarning: true,
-		ErrorHandlerWithOpts: func(_ context.Context, err error, w http.ResponseWriter, _ *http.Request, opts middleware.ErrorHandlerOpts) {
+		ErrorHandlerWithOpts: func(_ context.Context, err error, w http.ResponseWriter, r *http.Request, opts middleware.ErrorHandlerOpts) {
 			switch {
 			case errors.Is(err, routers.ErrPathNotFound):
-				writeProblem(w, http.StatusNotFound, "no such route")
+				problem.NotFound(w, r)
 			case errors.Is(err, routers.ErrMethodNotAllowed):
-				writeProblem(w, http.StatusMethodNotAllowed, "method not allowed")
+				problem.MethodNotAllowed(w, r, allowedMethods(spec, r.URL.Path))
 			default:
 				// kin-openapi appends the full schema after the first line; keep
 				// the human-readable part only.
 				msg, _, _ := strings.Cut(err.Error(), "\n")
-				writeProblem(w, opts.StatusCode, msg)
+				problem.Write(w, r, problem.New(opts.StatusCode, msg))
 			}
 		},
 	})
@@ -64,12 +74,17 @@ func New(h *handler.Hello) (http.Handler, error) {
 	return root, nil
 }
 
-func writeProblem(w http.ResponseWriter, status int, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(gen.Problem{
-		Title:  http.StatusText(status),
-		Status: int32(status),
-		Detail: &detail,
-	})
+// allowedMethods lists the methods the contract defines for a literal path,
+// so a 405 can carry the Allow header required by RFC 9110 section 15.5.6.
+func allowedMethods(spec *openapi3.T, path string) string {
+	item := spec.Paths.Find(path)
+	if item == nil {
+		return ""
+	}
+	var methods []string
+	for m := range item.Operations() {
+		methods = append(methods, m)
+	}
+	sort.Strings(methods)
+	return strings.Join(methods, ", ")
 }

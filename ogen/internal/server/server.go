@@ -4,8 +4,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"log/slog"
 	"net/http"
 
 	"github.com/ogen-go/ogen/ogenerrors"
@@ -14,27 +12,24 @@ import (
 	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/docs"
 	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/handler"
 	"github.com/mdemin729/go-openapi-contract-first/ogen/internal/oas"
+	"github.com/mdemin729/go-openapi-contract-first/problem"
 )
 
 func New(h *handler.Hello) (http.Handler, error) {
 	// ogen validates parameters and bodies against the schema in generated
-	// code, so no separate validation middleware is needed.
+	// code, so no separate validation middleware is needed. Errors returned
+	// by handlers go through handler.NewError (ogen "convenient errors");
+	// this hook only sees transport-level failures: decode, validation,
+	// unsupported content type.
 	apiServer, err := oas.NewServer(h,
-		oas.WithErrorHandler(func(ctx context.Context, w http.ResponseWriter, _ *http.Request, err error) {
-			code := ogenerrors.ErrorCode(err)
-			if code >= http.StatusInternalServerError {
-				slog.ErrorContext(ctx, "handler failed", "err", err)
-				writeProblem(w, code, "internal error")
-				return
-			}
-			writeProblem(w, code, err.Error())
+		oas.WithErrorHandler(func(_ context.Context, w http.ResponseWriter, r *http.Request, err error) {
+			problem.Write(w, r, problem.New(ogenerrors.ErrorCode(err), err.Error()))
 		}),
-		oas.WithNotFound(func(w http.ResponseWriter, _ *http.Request) {
-			writeProblem(w, http.StatusNotFound, "no such route")
+		oas.WithNotFound(func(w http.ResponseWriter, r *http.Request) {
+			problem.NotFound(w, r)
 		}),
-		oas.WithMethodNotAllowed(func(w http.ResponseWriter, _ *http.Request, allowed string) {
-			w.Header().Set("Allow", allowed)
-			writeProblem(w, http.StatusMethodNotAllowed, "method not allowed")
+		oas.WithMethodNotAllowed(func(w http.ResponseWriter, r *http.Request, allowed string) {
+			problem.MethodNotAllowed(w, r, allowed)
 		}),
 	)
 	if err != nil {
@@ -47,16 +42,4 @@ func New(h *handler.Hello) (http.Handler, error) {
 	}
 	root.Handle("/", apiServer)
 	return root, nil
-}
-
-func writeProblem(w http.ResponseWriter, status int, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	// Must be a pointer: ogen's MarshalJSON has a pointer receiver, and
-	// encoding/json cannot serialise an unset Opt* field by reflection.
-	_ = json.NewEncoder(w).Encode(&oas.Problem{
-		Title:  http.StatusText(status),
-		Status: int32(status),
-		Detail: oas.NewOptString(detail),
-	})
 }
