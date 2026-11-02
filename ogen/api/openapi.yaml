@@ -6,7 +6,8 @@ info:
     Go models and server stubs are generated from it with oapi-codegen.
   version: 1.0.0
   license:
-    name: MIT
+    name: BSD-3-Clause
+    url: https://github.com/mdemin729/go-openapi-contract-first/blob/main/LICENSE
 servers:
   - url: /
     description: The server hosting this document (relative, works on any host)
