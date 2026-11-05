@@ -111,7 +111,7 @@ For a trivial GET, building the `httptest` request dominates, so the two are eve
 
 ### Which one to pick
 
-**oapi-codegen** (recommended, [ADR-0002](docs/adr/0002-oapi-codegen-for-go-services.md)): the least magic. One readable generated file, plain structs with pointers, the standard library router or any framework, validation as a separate middleware with readable messages, 11 dependencies. OpenAPI 3.1 support is partial, so contracts stay on 3.0.3.
+**oapi-codegen** (recommended, [ADR-0002](docs/adr/0002-oapi-codegen-for-go-services.md)): the least magic. One readable generated file, plain structs with pointers, the standard library router or any framework, validation as a separate middleware with readable messages, 11 dependencies, and the larger, better-governed community. OpenAPI 3.1 support is "initial" since v2.8.0 (July 2026); contracts stay on 3.0.3 because neither generator handles multi-type arrays. Maintenance data measured on 2026-11-04 is in the ADR.
 
 **ogen**: the contract enforced by the compiler. Sum-type responses, `Opt*` types, generated validation, client and OpenTelemetry out of the box, faster on the error path. The cost is more generated code, 27 dependencies, its own router and JSON stack, and opinions such as `NewError`. Acceptable as a documented exception for a service that needs the strictness or the throughput.
 
